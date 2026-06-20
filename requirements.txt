@@ -1,0 +1,18 @@
+# Core
+pandas
+requests
+python-dotenv
+
+# Embeddings & Vector Store
+sentence-transformers
+chromadb
+
+# Sparse Retrieval
+rank-bm25
+scikit-learn
+
+# LLM API
+groq
+
+# Web Interface
+streamlit

@@ -1,0 +1,25 @@
+# Environment & secrets
+.env
+venv/
+
+# Vector store (regenerated at runtime)
+chroma_db/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cached external data (regenerated at runtime)
+data/cache/
