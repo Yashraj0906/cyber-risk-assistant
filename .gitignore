@@ -24,5 +24,4 @@ Thumbs.db
 # Cached external data (regenerated at runtime)
 data/cache/
 
-# Logo (proprietary)
-hive_pro_logo.jpg
+
