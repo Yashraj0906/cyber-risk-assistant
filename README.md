@@ -221,7 +221,7 @@ python -m pytest tests/ -v
 
 ## Supporting Question 3 — One Thing I Would Change
 
-I would **learn the scoring weights from real breach data instead of setting them by hand.** Right now the weights are hardcoded (internet exposure = 25 pts, exploit = 20 pts, etc.) based on what security teams generally consider important. This works, but it's based on my judgment, not evidence. With another day, I'd train a simple XGBoost model on historical incident data where the label is "was this vulnerability actually exploited in a real breach?" — that way the model learns which factors actually predict real-world attacks, rather than relying on manual assumptions.
+I would **embed the synthetic threat report into the RAG pipeline.** Right now, `synthetic_threat_report.md` is loaded by the data loader but never actually used — it just sits in the data folder. This report contains TawasolPay-specific threat context like which attack campaigns target the fintech sector, which APT groups are active, and what their typical playbooks look like. If I chunked and embedded this report alongside the NIST controls, the retrieval pipeline could pull TawasolPay-specific threat context into the LLM prompt, making the risk explanations more grounded in the company's actual threat landscape instead of relying only on generic NIST guidance.
 
 ---
 
