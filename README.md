@@ -1,173 +1,235 @@
-# TawasolPay — AI Cyber Risk Assistant
+# TawasolPay — AI-Powered Cyber Risk Assessment
 
-> Multi-factor risk scoring + RAG-based NIST 800-53 remediation for TawasolPay's infrastructure.
+**Live Demo:** [cyber-risk-assistant.streamlit.app](https://cyber-risk-assistant-nszp7eqkganw7nasvhs558.streamlit.app/)  
+**Repository:** [github.com/Yashraj0906/cyber-risk-assistant](https://github.com/Yashraj0906/cyber-risk-assistant)
 
-**Live App:** [cyber-risk-assistant.streamlit.app](https://cyber-risk-assistant-nszp7eqkganw7nasvhs558.streamlit.app/)
-
----
-
-## Quick Start
-
-```bash
-git clone https://github.com/Yashraj0906/cyber-risk-assistant.git
-cd cyber-risk-assistant
-python -m venv venv
-venv\Scripts\activate          # Windows
-pip install -r requirements.txt
-
-# Add your Groq API key
-cp .env.example .env           # then edit .env
-
-streamlit run app.py
-```
-
----
-
-## What It Does
-
-1. **Ingests** 6 CSV/markdown files + CISA KEV (live API) + NIST SP 800-53 (1,016 controls)
-2. **Scores** all 114 vulnerabilities using 10 weighted factors (not just CVSS)
-3. **Retrieves** relevant NIST controls via hybrid RAG (dense + sparse + reranking)
-4. **Generates** plain-English risk explanations and remediation steps via LLM
+An AI-powered system that ingests TawasolPay's cybersecurity data, scores vulnerabilities using multi-factor risk analysis (not just CVSS), retrieves relevant NIST SP 800-53 controls via a hybrid RAG pipeline, and generates actionable remediation guidance using an LLM.
 
 ---
 
 ## Architecture
 
 ```mermaid
-graph LR
-    subgraph Input
-        CSV[6 Local Files] --> DP[Data Processor]
-        KEV[CISA KEV API] --> DP
+graph TD
+    subgraph Data Ingestion
+        A1[assets.csv<br/>60 assets] --> DP[Data Processor]
+        A2[vulnerabilities.csv<br/>114 vulns] --> DP
+        A3[threat_intelligence.csv<br/>40 records] --> DP
+        A4[business_services.csv<br/>20 services] --> DP
+        A5[remediation_guidance.csv] --> DP
+        A6[synthetic_threat_report.md] --> DP
+        A7[CISA KEV API<br/>cisa.gov] --> DP
     end
 
-    subgraph Scoring
-        DP --> |114 enriched vulns| RS[Risk Scorer<br/>10 weighted factors]
-        RS --> |Top 5| T5[Top 5 Risks]
+    subgraph Risk Scoring
+        DP --> |Enriched DataFrame<br/>114 rows x 41 cols| RS[Risk Scorer<br/>10 weighted factors]
+        RS --> |Top 5 risks<br/>with score breakdowns| TOP5[Top 5 Risks]
     end
 
-    subgraph RAG
-        NIST[NIST 800-53<br/>1,016 controls] --> EMB[BGE Embeddings]
-        NIST --> BM[BM25 Index]
-        T5 --> QA[Query Builder]
-        QA --> EMB
+    subgraph RAG Pipeline
+        NIST[NIST SP 800-53 Rev 5<br/>1,016 controls from OSCAL JSON] --> CH[Chunker<br/>control-aware chunking]
+        CH --> |1,016 chunks| EMB[BGE Embeddings<br/>bge-small-en-v1.5]
+        CH --> |1,016 chunks| BM[BM25 Index<br/>keyword search]
+        EMB --> VDB[(ChromaDB<br/>vector store)]
+
+        TOP5 --> QA[Query Augmentation<br/>risk context → rich query]
+        QA --> VDB
         QA --> BM
-        EMB --> RRF[Rank Fusion]
-        BM --> RRF
-        RRF --> RR[Cross-Encoder<br/>Reranker]
-        RR --> |Top 3 controls| C[NIST Controls]
+        VDB --> |top 10 dense| RRF[Reciprocal Rank Fusion]
+        BM --> |top 10 sparse| RRF
+        RRF --> |top 10 fused| RE[Cross-Encoder Reranker<br/>ms-marco-MiniLM-L-6-v2]
+        RE --> |top 3 controls| CTRL[Retrieved NIST Controls]
     end
 
-    subgraph Output
-        T5 --> LLM[Llama 3.3 70B<br/>Groq]
-        C --> LLM
-        LLM --> UI[Streamlit UI]
+    subgraph LLM Generation
+        TOP5 --> LLM[Llama 3.3 70B<br/>via Groq API]
+        CTRL --> LLM
+        LLM --> OUT[Risk Explanation +<br/>Remediation Guidance]
+    end
+
+    subgraph Web Interface
+        OUT --> ST[Streamlit App]
+        TOP5 --> ST
+        CTRL --> ST
     end
 ```
 
 ---
 
-## Risk Scoring
+## How It Works
 
-CVSS alone doesn't capture real-world risk. A CVSS-10 on an internal dev box is less dangerous than a CVSS-8 on an internet-facing VPN with active ransomware campaigns.
+### 1. Data Ingestion (`src/data_loader.py`, `src/data_processor.py`)
+
+Loads 6 local files + 2 external sources and joins them into a single enriched DataFrame:
+
+```
+vulnerabilities.csv (114 rows)
+  + assets.csv (on asset_id) → asset_type, environment, internet_exposed, edr_installed
+  + business_services.csv (on business_service) → revenue_impact, compliance_scope, rto_hours
+  + threat_intelligence.csv (on CVE) → threat_actor, campaign_name, ransomware_association
+  + CISA KEV catalog (on CVE) → kev_confirmed, kev_ransomware
+= Enriched DataFrame (114 rows × 41 columns)
+```
+
+External data is cached locally after first download to avoid repeated API calls.
+
+### 2. Multi-Factor Risk Scoring (`src/risk_scorer.py`)
+
+Each vulnerability is scored using 10 weighted factors. CVSS is intentionally de-weighted (only 0-5 points out of ~100) because a CVSS-10 on an internal dev server is less dangerous than a CVSS-8 on an internet-facing VPN with active ransomware campaigns.
 
 | Factor | Points | Source |
 |--------|--------|--------|
-| Internet-exposed | 25 | assets.csv |
-| Exploit weaponized | 20 | vulnerabilities + threat_intel |
+| Internet-exposed asset | 25 | assets.csv |
+| Exploit available/weaponized | 20 | vulnerabilities.csv + threat_intel |
 | CISA KEV confirmed | 15 | CISA KEV API |
-| Ransomware linked | 15 | threat_intel + KEV |
-| Business criticality | 4-10 | business_services.csv |
+| Ransomware associated | 15 | threat_intel + KEV |
+| Critical business service | 10 | business_services.csv |
 | Compliance scope | 5 | business_services.csv |
-| No EDR | 5 | assets.csv |
-| Production env | 3 | assets.csv |
-| CVSS (normalized) | 0-5 | vulnerabilities.csv |
+| No EDR installed | 5 | assets.csv |
+| Production environment | 3 | assets.csv |
+| CVSS normalized | 0-5 | vulnerabilities.csv |
 | Customer-facing | 2 | business_services.csv |
 
----
+### 3. Hybrid RAG Pipeline (`src/rag_pipeline.py`)
 
-## RAG Pipeline
+For each of the top 5 risks, the pipeline retrieves the 3 most relevant NIST controls:
 
 ```mermaid
-graph TD
-    Q[Risk context → augmented query] --> D[Dense: BGE embeddings via ChromaDB]
-    Q --> S[Sparse: BM25 keyword matching]
-    D --> |top 10| F[Reciprocal Rank Fusion]
-    S --> |top 10| F
-    F --> |top 10| R[Cross-Encoder Reranker<br/>ms-marco-MiniLM-L-6-v2]
-    R --> |top 3| OUT[Final NIST Controls]
+graph LR
+    Q[Risk Context] --> QA[Query Augmentation]
+    QA --> D[Dense Search<br/>BGE embeddings + ChromaDB]
+    QA --> S[Sparse Search<br/>BM25 keywords]
+    D --> |top 10| RRF[Reciprocal Rank Fusion]
+    S --> |top 10| RRF
+    RRF --> |top 10 fused| CR[Cross-Encoder Reranking<br/>ms-marco-MiniLM-L-6-v2]
+    CR --> |top 3| R[Final Controls]
 ```
 
-- **Dense** catches semantic similarity ("patching" ↔ "flaw remediation")
-- **Sparse** catches exact terms ("AC-17" ↔ "AC-17 Remote Access")
-- **RRF** merges rank lists without needing score calibration
-- **Cross-encoder** re-scores each (query, doc) pair for precise final ranking
+**Why hybrid?** Dense search (embeddings) catches semantic meaning ("patching" ↔ "flaw remediation"). Sparse search (BM25) catches exact terms ("AC-17" ↔ "AC-17"). RRF combines both rank lists without score scale issues. The cross-encoder then re-scores each (query, document) pair with full cross-attention for precise final ranking.
 
----
+### 4. LLM Generation (`src/output_generator.py`, `src/llm_client.py`)
 
-## Evaluation
+Each risk + its retrieved NIST controls are sent to Llama 3.3 70B (via Groq) with a system prompt that enforces:
+- Explain WHY this risk is ranked at this position (grounded in the scoring data)
+- For each NIST control, provide actionable remediation steps
+- Use ONLY the provided context (no hallucination from training data)
 
-| Metric | Score |
-|--------|-------|
-| Hit Rate @3 | 1.0 |
-| MRR | 0.9 |
-| Context Precision | 1.0 |
-| Pytest (12 tests) | All passed |
+### 5. Evaluation (`src/rag_evaluator.py`)
 
----
+The retrieval pipeline is evaluated on a golden test set (5 queries with expected NIST controls):
 
-## Tech Stack
+| Metric | Score | Meaning |
+|--------|-------|---------|
+| Hit Rate @3 | 1.0 | The primary expected control appears in top 3 for all queries |
+| MRR | 0.9 | Average reciprocal rank of the primary control |
+| Context Precision | 1.0 | All retrieved controls are from the expected set |
 
-| Component | Choice |
-|-----------|--------|
-| LLM | Llama 3.3 70B (Groq free tier) |
-| Embeddings | BAAI/bge-small-en-v1.5 |
-| Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
-| Sparse | BM25 (rank-bm25) |
-| Vector DB | ChromaDB (persistent, local) |
-| UI | Streamlit |
+A faithfulness checker also verifies that NIST control IDs mentioned in LLM output were actually retrieved (catches hallucinated controls).
 
 ---
 
 ## Project Structure
 
 ```
-├── app.py                  # Streamlit web interface
+cyber-risk-assistant/
+├── app.py                      # Streamlit web interface
+├── requirements.txt            # Python dependencies
+├── .env.example                # API key template
 ├── src/
-│   ├── data_loader.py      # Load CSVs + fetch CISA KEV & NIST
-│   ├── data_processor.py   # Join all sources → enriched DataFrame
-│   ├── risk_scorer.py      # 10-factor scoring engine
-│   ├── chunker.py          # NIST controls → embedding chunks
-│   ├── embeddings.py       # BGE embedding model
-│   ├── vector_store.py     # ChromaDB indexing & search
-│   ├── sparse_retriever.py # BM25 keyword search
-│   ├── rag_pipeline.py     # Hybrid retrieval orchestrator
-│   ├── llm_client.py       # Groq API client
-│   ├── output_generator.py # LLM prompt engineering
-│   └── rag_evaluator.py    # Retrieval evaluation metrics
-├── data/                   # TawasolPay CSVs + threat report
-├── eval/                   # Golden test set + evaluation results
-└── tests/                  # 12 automated tests
+│   ├── data_loader.py          # Load CSVs + fetch CISA KEV & NIST OSCAL
+│   ├── data_processor.py       # Join all sources into enriched DataFrame
+│   ├── risk_scorer.py          # 10-factor weighted risk scoring
+│   ├── chunker.py              # NIST controls → embedding-ready chunks
+│   ├── embeddings.py           # BGE-small-en-v1.5 embedding model
+│   ├── vector_store.py         # ChromaDB persistent vector store
+│   ├── sparse_retriever.py     # BM25 keyword-based retrieval
+│   ├── rag_pipeline.py         # Full RAG orchestrator (hybrid + rerank)
+│   ├── llm_client.py           # Groq API client (Llama 3.3 70B)
+│   ├── output_generator.py     # LLM prompt engineering for explanations
+│   └── rag_evaluator.py        # Hit Rate, MRR, Context Precision evaluation
+├── data/
+│   ├── assets.csv              # 60 assets (VPN gateways, servers, etc.)
+│   ├── vulnerabilities.csv     # 114 vulnerabilities with CVE, CVSS, severity
+│   ├── threat_intelligence.csv # 40 threat actor records
+│   ├── business_services.csv   # 20 business services with revenue impact
+│   ├── remediation_guidance.csv
+│   └── synthetic_threat_report.md
+├── eval/
+│   ├── golden_set.json         # 5 test queries with expected NIST controls
+│   └── eval_results.json       # Evaluation metrics output
+├── tests/
+│   └── test_pipeline.py        # 12 automated tests (data, scoring, RAG)
+└── chroma_db/                  # Persistent vector store (auto-generated)
 ```
 
 ---
 
-## Supporting Questions
+## Run Locally
 
-### 1. The Data Split
+```bash
+# clone
+git clone https://github.com/Yashraj0906/cyber-risk-assistant.git
+cd cyber-risk-assistant
 
-**Embedded:** NIST SP 800-53 controls (1,016 documents). These are unstructured prose — security control descriptions and implementation guidance. Semantic search is the right tool because a query about "VPN remote code execution" needs to match controls named "Flaw Remediation" or "Remote Access" — connections that keyword matching alone would miss.
+# setup
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
 
-**Queried as structured records:** The CSVs (assets, vulnerabilities, threat intel, business services) and CISA KEV. These have clear column relationships (asset_id, CVE, business_service) that are best handled by pandas joins and filters. Embedding a CSV row would lose the structured field-level relationships.
+pip install -r requirements.txt
 
-### 2. Where It Goes Wrong
+# add your Groq API key
+cp .env.example .env
+# edit .env and add: GROQ_API_KEY=your_key_here
 
-1. **Missing KEV coverage:** If a CVE is actively exploited but not yet in the CISA KEV catalog, the system scores it 15 points lower than it should. Fix: supplement with EPSS (Exploit Prediction Scoring System) as a secondary signal for exploitation likelihood.
+# run
+streamlit run app.py
 
-2. **Single threat actor per CVE:** The data processor deduplicates threat intel by CVE, keeping only the highest-confidence match. If CVE-2024-21762 is exploited by both a ransomware gang and a state-sponsored APT, only one is retained. Fix: aggregate all threat actors per CVE and take the maximum risk signal from each.
+# tests
+python -m pytest tests/ -v
+```
 
-3. **Control family mismatch:** The retriever can return controls from the correct NIST family but wrong sub-control. For example, querying about "VPN authentication bypass" might return IA-2(13) "Out-of-band Authentication" instead of IA-2(1) "Multi-Factor Authentication to Privileged Accounts." Fix: add asset-type metadata filtering before reranking.
+---
 
-### 3. One Thing I Would Change
+## Tech Stack
 
-I would replace the hand-tuned scoring weights with a learned model. The current weights (internet_exposed = 25, exploit = 20, etc.) are based on industry heuristics and work for TawasolPay's data, but they're static. Given another day, I'd train a lightweight XGBoost model on historical breach data using "was this vulnerability actually exploited?" as the target — so the weights reflect real-world outcomes, not manual judgment.
+| Component | Tool | Why |
+|-----------|------|-----|
+| LLM | Llama 3.3 70B via Groq | Free tier, fast inference, no cold starts |
+| Embeddings | BAAI/bge-small-en-v1.5 | Instruction-prefixed queries improve retrieval accuracy |
+| Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 | Full cross-attention scoring for precise top-3 selection |
+| Sparse Search | BM25 (rank-bm25) | Catches exact keyword matches embeddings miss |
+| Vector Store | ChromaDB | Persistent, local, no external service needed |
+| Fusion | Reciprocal Rank Fusion | Combines rank lists without score scale issues |
+| Web UI | Streamlit | Fast prototyping, built-in deployment |
+
+---
+
+## Supporting Question 1 — The Data Split
+
+**I embedded the NIST SP 800-53 controls** (1,016 documents). These are written in natural language — paragraphs describing what each security control does and how to implement it. To find the right control for a given vulnerability, I need semantic search (e.g., a query about "patching a VPN" should match a control called "Flaw Remediation" even though the words are different).
+
+**I queried the CSVs as structured records** using pandas joins and filters. Assets, vulnerabilities, threat intel, and business services all have clear columns like `asset_id`, `cve`, `business_service` that connect them. A SQL-style join is the right way to combine these — embedding a CSV row into a vector would throw away the column-level meaning.
+
+## Supporting Question 2 — Where It Goes Wrong
+
+1. **A new zero-day won't get flagged if CISA hasn't added it to KEV yet.** My system checks the CISA KEV catalog to decide if a CVE is actively exploited. If a vulnerability is being exploited in the wild but CISA hasn't listed it yet, the system misses 15 points of risk score. I'd fix this by also checking EPSS (Exploit Prediction Scoring System) which gives a probability of exploitation without needing a manual catalog entry.
+
+2. **Only one threat actor is kept per CVE.** When merging threat intelligence, I deduplicate by CVE and keep the highest-confidence match. So if CVE-2024-21762 is used by both a ransomware group and a nation-state APT, the system only sees one of them. I'd fix this by aggregating — take the worst-case signal from all threat actors linked to that CVE.
+
+3. **The retriever sometimes pulls the right NIST family but wrong sub-control.** For example, searching for "VPN authentication bypass" might return IA-2(13) "Out-of-band Authentication" instead of the more relevant IA-2(1) "Multi-Factor Authentication." The cross-encoder reranker helps, but doesn't fully solve it. I'd fix this by filtering controls by asset type before reranking (e.g., only show network-related controls for network devices).
+
+## Supporting Question 3 — One Thing I Would Change
+
+I would **learn the scoring weights from real breach data instead of setting them by hand.** Right now the weights are hardcoded (internet exposure = 25 pts, exploit = 20 pts, etc.) based on what security teams generally consider important. This works, but it's based on my judgment, not evidence. With another day, I'd train a simple XGBoost model on historical incident data where the label is "was this vulnerability actually exploited in a real breach?" — that way the model learns which factors actually predict real-world attacks, rather than relying on manual assumptions.
+
+---
+
+## Evaluation Results
+
+```
+12 tests passed (pytest)
+Hit Rate @3:        1.0
+MRR:                0.9
+Context Precision:  1.0
+```
