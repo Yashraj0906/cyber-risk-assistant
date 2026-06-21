@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-06-20T19:38:29.355085",
+  "config": {
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "sparse": "BM25 (rank-bm25)",
+    "fusion": "Reciprocal Rank Fusion (k=60)",
+    "top_k": 3
+  },
+  "retrieval_metrics": {
+    "hit_rate": 1.0,
+    "mrr": 0.9,
+    "context_precision": 1.0,
+    "total_queries": 5,
+    "hits": 5
+  }
+}

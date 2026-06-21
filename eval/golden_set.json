@@ -1,0 +1,27 @@
+[
+  {
+    "query": "Fortinet VPN remote code execution via heap buffer overflow",
+    "expected_controls": ["AC-17", "AC-17(4)", "SI-2", "SC-18(5)"],
+    "primary_control": "AC-17"
+  },
+  {
+    "query": "API gateway admin interface exposed to internet without authentication",
+    "expected_controls": ["AC-14", "IA-2", "SC-7(26)", "AC-3"],
+    "primary_control": "AC-14"
+  },
+  {
+    "query": "Confluence server-side template injection with active ransomware campaign",
+    "expected_controls": ["SI-3", "SI-10(6)", "SI-2", "CP-3(1)"],
+    "primary_control": "SI-3"
+  },
+  {
+    "query": "CI/CD build server authentication bypass allowing unauthorized code deployment",
+    "expected_controls": ["CM-7(4)", "AC-7(4)", "SI-4(22)", "IA-2"],
+    "primary_control": "CM-7(4)"
+  },
+  {
+    "query": "Citrix load balancer session token leak on customer-facing login page",
+    "expected_controls": ["IA-13(3)", "AC-12", "SC-23(1)", "SC-8"],
+    "primary_control": "AC-12"
+  }
+]
