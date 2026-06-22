@@ -221,7 +221,7 @@ python -m pytest tests/ -v
 
 ## Supporting Question 3 — One Thing I Would Change
 
-I would **embed the synthetic threat report into the RAG pipeline.** Right now, `synthetic_threat_report.md` is loaded by the data loader but never actually used — it just sits in the data folder. This report contains TawasolPay-specific threat context like which attack campaigns target the fintech sector, which APT groups are active, and what their typical playbooks look like. If I chunked and embedded this report alongside the NIST controls, the retrieval pipeline could pull TawasolPay-specific threat context into the LLM prompt, making the risk explanations more grounded in the company's actual threat landscape instead of relying only on generic NIST guidance.
+I would **integrate EPSS (Exploit Prediction Scoring System) scores into the risk scoring pipeline.** Right now, my system checks CISA KEV to see if a CVE is actively exploited — but KEV is binary (yes/no) and only lists ~1,100 CVEs out of 200,000+. EPSS, maintained by FIRST.org, gives a probability score (0-1) predicting how likely a CVE will be exploited in the next 30 days. This would let me score the ~113 vulnerabilities that are NOT in KEV with a continuous risk signal instead of treating them all as equally unexploited. The implementation would involve calling the EPSS API (`https://api.first.org/data/v1/epss`), caching scores daily, and adding EPSS probability as an 11th scoring factor (e.g., EPSS > 0.5 = +10 pts, 0.1-0.5 = +5 pts). This gives a more nuanced risk picture than the current binary KEV check.
 
 ---
 
