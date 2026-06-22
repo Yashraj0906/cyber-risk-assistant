@@ -207,7 +207,7 @@ python -m pytest tests/ -v
 
 ## Supporting Question 1 — The Data Split
 
-**I embedded the NIST SP 800-53 controls** (1,016 documents). These are written in natural language — paragraphs describing what each security control does and how to implement it. To find the right control for a given vulnerability, I need semantic search (e.g., a query about "patching a VPN" should match a control called "Flaw Remediation" even though the words are different).
+**I embedded the NIST SP 800-53 controls** (1,016 documents). These are written in natural language paragraphs describing what each security control does and how to implement it. To find the right control for a given vulnerability, I need semantic search (e.g., a query about "patching a VPN" should match a control called "Flaw Remediation" even though the words are different).
 
 **I queried the CSVs as structured records** using pandas joins and filters. Assets, vulnerabilities, threat intel, and business services all have clear columns like `asset_id`, `cve`, `business_service` that connect them. A SQL-style join is the right way to combine these — embedding a CSV row into a vector would throw away the column-level meaning.
 
@@ -215,7 +215,7 @@ python -m pytest tests/ -v
 
 1. **A new zero-day won't get flagged if CISA hasn't added it to KEV yet.** My system checks the CISA KEV catalog to decide if a CVE is actively exploited. If a vulnerability is being exploited in the wild but CISA hasn't listed it yet, the system misses 15 points of risk score. I'd fix this by also checking EPSS (Exploit Prediction Scoring System) which gives a probability of exploitation without needing a manual catalog entry.
 
-2. **Only one threat actor is kept per CVE.** When merging threat intelligence, I deduplicate by CVE and keep the highest-confidence match. So if CVE-2024-21762 is used by both a ransomware group and a nation-state APT, the system only sees one of them. I'd fix this by aggregating — take the worst-case signal from all threat actors linked to that CVE.
+2. **Only one threat actor is kept per CVE.** When merging threat intelligence, I deduplicate by CVE and keep the highest-confidence match. So if CVE-2024-21762 is used by both a ransomware group and a nation-state APT, the system only sees one of them. I'd fix this by aggregating take the worst-case signal from all threat actors linked to that CVE.
 
 3. **The retriever sometimes pulls the right NIST family but wrong sub-control.** For example, searching for "VPN authentication bypass" might return IA-2(13) "Out-of-band Authentication" instead of the more relevant IA-2(1) "Multi-Factor Authentication." The cross-encoder reranker helps, but doesn't fully solve it. I'd fix this by filtering controls by asset type before reranking (e.g., only show network-related controls for network devices).
 
